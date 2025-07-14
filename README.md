@@ -126,7 +126,7 @@ pip install torch torchvision numpy scipy
 
     ```bash
     /path/to/your/data/
-    └── DPSL3D-measurement/
+    └── double_projectors_3D/
         ├── double_projectors_real_dataset/
         │   ├── train/
         │   │   ├── inpout/
