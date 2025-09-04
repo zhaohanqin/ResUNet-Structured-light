@@ -2,15 +2,52 @@
 
 本项目是论文《Deep Learning-Driven One-Shot Dual-View 3-D Reconstruction for Dual-Projector System》中提出的 **ResUNet** 模型的 PyTorch 实现。该模型旨在从单张由双投影仪系统捕获的叠加光栅图像中，一次性恢复出两个视角的绝对相位图，从而实现快速、高精度的三维重建。
 
-## 文件结构
+## 文件结构与职责说明
 
 ```bash
 .
-├── ResUNet.py                                  # 核心脚本：包含模型定义、训练和评估逻辑
-├── ResUNet_Architecture_Summary_Revised.md     # 网络结构详细文档
-├── ResUNet_Operation_Guide.md                  # 项目运行、调试指南
-└── README.md                                   # 本文件：项目概览和高级说明
+├── double_projectors_3D/                       # 数据集根目录（真实/模拟数据集）
+│   ├── double_projectors_real_dataset/         # 真实数据集
+│   │   ├── train/
+│   │   │   ├── input 或 inpout/                # 训练输入的叠加光栅 .mat 文件
+│   │   │   └── gt/
+│   │   │       ├── unwrapped_phase_left/      # 左视角真值相位 .mat 文件
+│   │   │       └── unwrapped_phase_right/     # 右视角真值相位 .mat 文件
+│   │   └── test/                              # 测试/验证数据，同上结构
+│   └── double_projectors_simulation_dataset/   # 模拟数据集（可选）
+│
+├── ResUNet_model.py                            # 模型文件：ResidualModule 与 ResUNet 网络定义
+├── train.py                                     # 训练入口：数据集类、训练/验证循环与主程序
+├── ResUNet.py                                   # 旧版整合脚本（已拆分，保留以兼容与参考）
+├── ResUNet_Architecture_Summary_Revised.md     # 网络结构详细文档（含层级说明与表格）
+├── ResUNet_Operation_Guide.md                  # 运行与调试指南（环境、数据准备、常见问题）
+├── Deep_Learning-Driven_One-Shot_Dual-View_3-D_Reconstruction_for_Dual-Projector_System.pdf  # 论文PDF
+└── README.md                                   # 本文件：项目概览、说明与用法
 ```
+
+### 各文件/目录的功能与作用
+
+- **double_projectors_3D/**: 数据集根目录，包含真实与模拟数据集两套结构。训练脚本会在此路径下自动定位 `input/inpout` 与 `gt` 子目录。
+  - **double_projectors_real_dataset/**: 真实拍摄数据集，含 `train/` 与 `test/` 两个划分；`gt/` 下提供左右视角的绝对相位图。
+  - **double_projectors_simulation_dataset/**: 模拟生成的数据集，结构与真实数据一致，便于扩展与对比实验。
+
+- **ResUNet_model.py**: 核心网络定义文件。
+  - `ResidualModule`: 多分支卷积 + 特征拼接 + 1x1 融合 + 残差连接，抽象论文中残差多尺度模块。
+  - `ResUNet`: U 形结构的主干网络，由编码器、瓶颈层、解码器与跳跃连接组成；输出双通道相位图（左、右）。
+
+- **train.py**: 训练与验证主程序。
+  - `PhaseDataset`: 读取 `.mat` 数据，自动适配多种键名（例如 `input`/`fringe`/`grating`；`phase`/`phi_unwrapped`），并智能容错 `input` 与常见拼写 `inpout` 目录。
+  - `compute_metrics`: 评估指标计算（MAE、RMSE）。
+  - `train_and_evaluate`: 训练循环（进度条、日志）、验证循环、学习率调度、数据加载器设置。
+  - 主入口：配置数据集路径与超参数，启动训练流程。
+
+- **ResUNet.py**: 旧版整合脚本（模型 + 数据集 + 训练在单文件）。现已被拆分为 `ResUNet_model.py` 与 `train.py`，此文件保留以便参考或回退。
+
+- **ResUNet_Architecture_Summary_Revised.md**: 对网络结构的深入解析，包括模块构成、维度变化、设计动机等，有助于理解实现细节与超参数选择。
+
+- **ResUNet_Operation_Guide.md**: 操作说明与调试手册，包含环境搭建、数据准备步骤、运行命令、常见错误定位与建议（如显存不足时降低 `batch_size`）。
+
+- **Deep_Learning-Driven_One-Shot_Dual-View_3-D_Reconstruction_for_Dual-Projector_System.pdf**: 论文原文，项目实现对应其中的模型架构与任务描述。
 
 ## 网络架构详解
 
@@ -141,13 +178,19 @@ pip install torch torchvision numpy scipy
 
 ### 3. 运行训练
 
-1. **修改脚本**: 打开 `ResUNet.py` 文件。
-2. **定位到 `if __name__ == "__main__":` 代码块**。
-3. **修改 `dataset_path`**: 将路径 `/path/to/DPSL3D-measurement` 替换为您在第2步中存放数据集的 **上一级目录**。例如，如果您的数据集在 `E:/data/DPSL3D-measurement`，则应将 `dataset_path` 设置为 `E:/data`。
-4. **运行脚本**:
+现在推荐通过拆分后的训练入口脚本进行训练：
+
+1. 确认数据集目录位于项目根目录的 `double_projectors_3D/` 下（或在 `train.py` 中按需调整路径）。
+2. 执行训练：
 
     ```bash
-    python ResUNet.py
+    python train.py
     ```
 
-5. 训练过程中的损失（Loss）、平均绝对误差（MAE）和均方根误差（RMSE）将会被打印在控制台。
+3. 训练过程中会在控制台打印每个 epoch 的训练/验证损失（Loss）、平均绝对误差（MAE）与均方根误差（RMSE）。
+
+如需参考旧版单文件流程，可运行：
+
+```bash
+python ResUNet.py
+```
