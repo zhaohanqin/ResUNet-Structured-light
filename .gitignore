@@ -1,3 +1,64 @@
-double_projectors_3D/
-DPSL3D-measurement-main/
+# ============================
+# 深度学习/机器学习项目 .gitignore
+# ============================
+
+# ---- 数据集 ----
+data/
+datasets/
 *.zip
+*.tar.gz
+*.rar
+*.7z
+
+# ---- 模型文件 ----
+*.pth
+*.pt
+*.ckpt
+*.h5
+*.pb
+*.onnx
+
+# ---- 训练输出/日志 ----
+logs/
+*.log
+*.out
+runs/                       
+# TensorBoard
+events.out.tfevents.*
+
+# ---- 中间结果/缓存 ----
+outputs/
+checkpoints/
+results/
+*.npy
+*.npz
+*.pkl
+*.csv
+*.tsv
+*.json
+*.yaml
+*.yml
+*.hdf5
+*.mat
+
+# ---- Python 环境 ----
+__pycache__/
+*.py[cod]
+*.so
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+ENV/
+
+# ---- IDE/编辑器文件 ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# ---- 操作系统文件 ----
+.DS_Store
+Thumbs.db
+desktop.ini
