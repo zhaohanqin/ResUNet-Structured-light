@@ -154,7 +154,7 @@ def compute_metrics(outputs, targets):
     return mae, rmse
 
 
-def train_and_evaluate(dataset_path, dataset_type='real', num_epochs=100, batch_size=8, lr=0.0005):
+def train_and_evaluate(dataset_path, dataset_type='real', num_epochs=100, batch_size=8, lr=0.0005, verbose=True, show_progress=True, progress_style='clean'):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
@@ -165,51 +165,148 @@ def train_and_evaluate(dataset_path, dataset_type='real', num_epochs=100, batch_
 
     train_dataset = PhaseDataset(dataset_path, dataset_type, 'train')
     val_dataset = PhaseDataset(dataset_path, dataset_type, 'test')
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=4, pin_memory=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)  # 设置num_workers=0避免多进程问题
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=0, pin_memory=True)
+    
+    print(f"训练数据集大小: {len(train_dataset)}")
+    print(f"验证数据集大小: {len(val_dataset)}")
+    print(f"训练批次数: {len(train_loader)}")
+    print(f"验证批次数: {len(val_loader)}")
 
+    # 测试数据加载
+    try:
+        print("测试数据加载...")
+        test_batch = next(iter(train_loader))
+        print(f"成功加载测试批次，输入形状: {test_batch[0].shape}, 目标形状: {test_batch[1].shape}")
+    except Exception as e:
+        print(f"数据加载测试失败: {e}")
+        return
+    
     print(f"Starting training for {num_epochs} epochs...")
+    print(f"Dataset: {dataset_type}, Batch size: {batch_size}, Learning rate: {lr}")
+    print("=" * 100)
+    
     for epoch in range(num_epochs):
+        # 训练阶段
         model.train()
         train_loss, train_mae, train_rmse = 0.0, 0.0, 0.0
-        train_pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs} [Training]", leave=False)
-        for inputs, targets in train_pbar:
-            inputs, targets = inputs.to(device), targets.to(device)
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            loss.backward()
-            optimizer.step()
+        
+        # 简化的训练循环
+        if verbose and not show_progress:
+            print(f"Epoch {epoch+1:3d}/{num_epochs} [Training]...", end=" ", flush=True)
+        
+        # 使用简单的进度显示，避免复杂的tqdm设置
+        if show_progress and verbose:
+            if progress_style == 'clean':
+                train_pbar = tqdm(train_loader, 
+                                desc=f"Epoch {epoch+1:3d}/{num_epochs} [Train]", 
+                                leave=False, 
+                                disable=False, 
+                                bar_format='{desc} {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]')
+            else:
+                train_pbar = tqdm(train_loader, 
+                                desc=f"Epoch {epoch+1:3d}/{num_epochs} [Train]", 
+                                leave=False)
+        else:
+            train_pbar = train_loader
+        
+        batch_count = 0
+        try:
+            for batch_idx, (inputs, targets) in enumerate(train_pbar):
+                inputs, targets = inputs.to(device), targets.to(device)
+                optimizer.zero_grad()
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
+                loss.backward()
+                optimizer.step()
 
-            mae, rmse = compute_metrics(outputs, targets)
-            train_loss += loss.item()
-            train_mae += mae
-            train_rmse += rmse
-            train_pbar.set_postfix(loss=f'{loss.item():.4f}', mae=f'{mae:.4f}')
+                mae, rmse = compute_metrics(outputs, targets)
+                train_loss += loss.item()
+                train_mae += mae
+                train_rmse += rmse
+                batch_count += 1
+                
+                # 每50个batch显示一次进度（当不使用进度条时）
+                if not show_progress and verbose and (batch_idx + 1) % 50 == 0:
+                    print(f"{batch_idx + 1}/{len(train_loader)}", end=" ", flush=True)
+                    
+                # 第一个batch后显示成功信息（只在非进度条模式下）
+                if batch_idx == 0 and verbose and not show_progress:
+                    print(f"First batch processed successfully. Loss: {loss.item():.4f}", end=" ", flush=True)
+        except Exception as e:
+            print(f"\n训练过程中发生错误: {e}")
+            raise
 
         scheduler.step()
 
+        # 验证阶段
         model.eval()
         val_loss, val_mae, val_rmse = 0.0, 0.0, 0.0
-        val_pbar = tqdm(val_loader, desc=f"Epoch {epoch+1}/{num_epochs} [Validation]", leave=False)
-        with torch.no_grad():
-            for inputs, targets in val_pbar:
-                inputs, targets = inputs.to(device), targets.to(device)
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
-                val_loss += loss.item()
-                mae, rmse = compute_metrics(outputs, targets)
-                val_mae += mae
-                val_rmse += rmse
-                val_pbar.set_postfix(loss=f'{loss.item():.4f}', mae=f'{mae:.4f}')
+        
+        if verbose and not show_progress:
+            print("Validating...", end=" ", flush=True)
+        
+        # 验证阶段也使用简化的进度显示
+        if show_progress and verbose:
+            if progress_style == 'clean':
+                val_pbar = tqdm(val_loader, 
+                              desc=f"Epoch {epoch+1:3d}/{num_epochs} [Val]", 
+                              leave=False, 
+                              disable=False,
+                              bar_format='{desc} {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]')
+            else:
+                val_pbar = tqdm(val_loader, 
+                              desc=f"Epoch {epoch+1:3d}/{num_epochs} [Val]", 
+                              leave=False)
+        else:
+            val_pbar = val_loader
+        
+        val_batch_count = 0
+        try:
+            with torch.no_grad():
+                for batch_idx, (inputs, targets) in enumerate(val_pbar):
+                    inputs, targets = inputs.to(device), targets.to(device)
+                    outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                    val_loss += loss.item()
+                    mae, rmse = compute_metrics(outputs, targets)
+                    val_mae += mae
+                    val_rmse += rmse
+                    val_batch_count += 1
+                    
+                    # 每25个batch显示一次进度（验证通常batch较少）
+                    if not show_progress and verbose and (batch_idx + 1) % 25 == 0:
+                        print(f"{batch_idx + 1}/{len(val_loader)}", end=" ", flush=True)
+        except Exception as e:
+            print(f"\n验证过程中发生错误: {e}")
+            raise
 
-        print(f"Epoch {epoch+1}/{num_epochs}, "
-              f"Train Loss: {train_loss/len(train_loader):.4f}, "
-              f"Train MAE: {train_mae/len(train_loader):.4f}, "
-              f"Train RMSE: {train_rmse/len(train_loader):.4f}, "
-              f"Val Loss: {val_loss/len(val_loader):.4f}, "
-              f"Val MAE: {val_mae/len(val_loader):.4f}, "
-              f"Val RMSE: {val_rmse/len(val_loader):.4f}")
+        # 计算平均指标
+        avg_train_loss = train_loss / len(train_loader)
+        avg_train_mae = train_mae / len(train_loader)
+        avg_train_rmse = train_rmse / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
+        avg_val_mae = val_mae / len(val_loader)
+        avg_val_rmse = val_rmse / len(val_loader)
+        
+        # 格式化输出每个epoch的结果
+        print(f"Done! | "
+              f"Train: Loss={avg_train_loss:.4f}, MAE={avg_train_mae:.4f}, RMSE={avg_train_rmse:.4f} | "
+              f"Val: Loss={avg_val_loss:.4f}, MAE={avg_val_mae:.4f}, RMSE={avg_val_rmse:.4f}")
+        
+        # 每10个epoch打印分隔线
+        if (epoch + 1) % 10 == 0:
+            print("-" * 100)
+    
+    # 训练完成后的总结
+    print("\n" + "=" * 100)
+    print("训练完成！")
+    print(f"总训练轮数: {num_epochs}")
+    print(f"最终训练损失: {avg_train_loss:.4f}")
+    print(f"最终验证损失: {avg_val_loss:.4f}")
+    print(f"最终训练MAE: {avg_train_mae:.4f}")
+    print(f"最终验证MAE: {avg_val_mae:.4f}")
+    print("=" * 100)
 
 
 if __name__ == "__main__":
@@ -225,13 +322,19 @@ if __name__ == "__main__":
     epochs = 100
     batch = 2
     learning_rate = 0.0005
+    verbose_mode = True  # 设置为False可以禁用详细输出
+    show_progress_mode = True  # 启用进度条
+    progress_style_mode = 'clean'  # 'clean' 或 'default'
 
     train_and_evaluate(
         dataset_path=dataset_path,
         dataset_type=dataset_type_to_use,
         num_epochs=epochs,
         batch_size=batch,
-        lr=learning_rate
+        lr=learning_rate,
+        verbose=verbose_mode,
+        show_progress=show_progress_mode,
+        progress_style=progress_style_mode
     )
 
 

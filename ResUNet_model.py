@@ -1,5 +1,20 @@
 import torch
 import torch.nn as nn
+import argparse
+import sys
+
+# 尝试导入 torchsummary 和 torchinfo
+try:
+    from torchsummary import summary
+    TORCHSUMMARY_AVAILABLE = True
+except ImportError:
+    TORCHSUMMARY_AVAILABLE = False
+
+try:
+    from torchinfo import summary as torchinfo_summary
+    TORCHINFO_AVAILABLE = True
+except ImportError:
+    TORCHINFO_AVAILABLE = False
 
 
 class ResidualModule(nn.Module):
@@ -168,5 +183,103 @@ class ResUNet(nn.Module):
         d1 = self.dec1(d1)
         
         return self.out(d1)
+
+
+def print_model_summary(model, input_size, device='cpu'):
+    """
+    打印模型结构摘要，优先使用 torchsummary，如果不可用则使用 torchinfo
+    """
+    print(f"模型设备: {device}")
+    print(f"输入尺寸: {input_size}")
+    print("=" * 80)
+    
+    if TORCHSUMMARY_AVAILABLE:
+        print("使用 torchsummary 显示模型结构:")
+        print("-" * 40)
+        try:
+            summary(model, input_size, device=device)
+        except Exception as e:
+            print(f"torchsummary 出错: {e}")
+            if TORCHINFO_AVAILABLE:
+                print("\n回退到 torchinfo:")
+                print("-" * 40)
+                torchinfo_summary(model, input_size=input_size, device=device)
+    elif TORCHINFO_AVAILABLE:
+        print("使用 torchinfo 显示模型结构:")
+        print("-" * 40)
+        torchinfo_summary(model, input_size=input_size, device=device)
+    else:
+        print("警告: 未安装 torchsummary 或 torchinfo")
+        print("请安装其中一个库来查看模型结构:")
+        print("pip install torchsummary")
+        print("或")
+        print("pip install torchinfo")
+        
+        # 显示基本的模型信息
+        print("\n基本模型信息:")
+        print("-" * 40)
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"总参数数量: {total_params:,}")
+        print(f"可训练参数数量: {trainable_params:,}")
+        print(f"模型大小: {total_params * 4 / 1024 / 1024:.2f} MB (假设float32)")
+
+
+def main():
+    """主函数，用于独立运行模型结构显示"""
+    parser = argparse.ArgumentParser(description='ResUNet 模型结构显示工具')
+    parser.add_argument('--input_channels', type=int, default=1, 
+                       help='输入图像通道数 (默认: 1)')
+    parser.add_argument('--output_channels', type=int, default=2, 
+                       help='输出相位图通道数 (默认: 2)')
+    parser.add_argument('--image_size', type=int, default=256, 
+                       help='输入图像尺寸 (默认: 256)')
+    parser.add_argument('--device', type=str, default='cpu', 
+                       choices=['cpu', 'cuda'], help='运行设备 (默认: cpu)')
+    
+    args = parser.parse_args()
+    
+    # 检查设备可用性
+    if args.device == 'cuda' and not torch.cuda.is_available():
+        print("警告: CUDA 不可用，切换到 CPU")
+        args.device = 'cpu'
+    
+    # 创建模型
+    print("创建 ResUNet 模型...")
+    model = ResUNet(in_channels=args.input_channels, out_channels=args.output_channels)
+    model = model.to(args.device)
+    
+    # 打印模型结构
+    input_size = (args.input_channels, args.image_size, args.image_size)
+    print_model_summary(model, input_size, args.device)
+    
+    # 显示模型配置信息
+    print("\n" + "=" * 80)
+    print("模型配置信息:")
+    print("-" * 40)
+    print(f"输入通道数: {args.input_channels}")
+    print(f"输出通道数: {args.output_channels}")
+    print(f"输入图像尺寸: {args.image_size} x {args.image_size}")
+    print(f"运行设备: {args.device}")
+    
+    # 显示网络层级信息
+    print("\n网络层级信息:")
+    print("-" * 40)
+    print("编码器路径:")
+    print("  enc1: ResidualModule(1→64) + MaxPool2d")
+    print("  enc2: ResidualModule(64→128) + MaxPool2d")
+    print("  enc3: ResidualModule(128→256) + MaxPool2d")
+    print("  enc4: ResidualModule(256→512) + MaxPool2d")
+    print("  enc5: ResidualModule(512→1024) [瓶颈层]")
+    print("\n解码器路径:")
+    print("  up4: ConvTranspose2d(1024→512) + Concat + ResidualModule(1024→512)")
+    print("  up3: ConvTranspose2d(512→256) + Concat + ResidualModule(512→256)")
+    print("  up2: ConvTranspose2d(256→128) + Concat + ResidualModule(256→128)")
+    print("  up1: ConvTranspose2d(128→64) + Concat + ResidualModule(128→64)")
+    print("  out: Conv2d(64→2) [输出层]")
+
+
+if __name__ == "__main__":
+    main()
 
 
